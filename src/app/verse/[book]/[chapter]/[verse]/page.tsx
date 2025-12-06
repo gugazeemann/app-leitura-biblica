@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Lightbulb, BookOpen, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Lightbulb, BookOpen, MessageSquare, Volume2, VolumeX } from 'lucide-react';
 import Link from 'next/link';
 import { getVerses, getVerse } from '@/lib/data';
 import { BOOKS } from '@/lib/constants';
@@ -19,6 +19,9 @@ export default function VersePage() {
   const [bookData, setBookData] = useState<any>(null);
   const [showInterpretation, setShowInterpretation] = useState(false);
   const [interpretation, setInterpretation] = useState('');
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   useEffect(() => {
     // Buscar dados do livro
@@ -33,6 +36,52 @@ export default function VersePage() {
     const verse = getVerse(bookId, chapterNum, verseNum);
     setCurrentVerse(verse);
   }, [bookId, chapterNum, verseNum]);
+
+  // Limpar síntese de voz ao desmontar componente
+  useEffect(() => {
+    return () => {
+      if (speechRef.current) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
+  const handlePlayAudio = () => {
+    if (!currentVerse) return;
+
+    // Se já está tocando, parar
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+      setIsPlaying(false);
+      return;
+    }
+
+    // Criar nova síntese de voz
+    const utterance = new SpeechSynthesisUtterance(currentVerse.text);
+    utterance.lang = 'pt-BR';
+    utterance.rate = 0.9; // Velocidade um pouco mais lenta para melhor compreensão
+    utterance.pitch = 1;
+    utterance.volume = 1;
+
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+      setIsPlaying(true);
+    };
+
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      setIsPlaying(false);
+    };
+
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      setIsPlaying(false);
+    };
+
+    speechRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+  };
 
   if (!currentVerse || !bookData) {
     return (
@@ -105,6 +154,28 @@ export default function VersePage() {
 
         {/* Botões de ação */}
         <div className="mt-12 space-y-4">
+          {/* Botão de Áudio */}
+          <button
+            onClick={handlePlayAudio}
+            className={`w-full rounded-2xl p-6 hover:shadow-xl transition-all duration-300 flex items-center justify-center gap-3 ${
+              isPlaying
+                ? 'bg-gradient-to-r from-red-500 to-red-600 text-white'
+                : 'bg-gradient-to-r from-green-500 to-green-600 text-white'
+            }`}
+          >
+            {isPlaying ? (
+              <>
+                <VolumeX className="w-6 h-6" />
+                <span className="text-lg font-semibold">Parar áudio</span>
+              </>
+            ) : (
+              <>
+                <Volume2 className="w-6 h-6" />
+                <span className="text-lg font-semibold">Escutar versículo</span>
+              </>
+            )}
+          </button>
+
           <button
             onClick={() => setShowInterpretation(!showInterpretation)}
             className="w-full bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-2xl p-6 hover:shadow-xl transition-all duration-300 flex items-center justify-center gap-3"

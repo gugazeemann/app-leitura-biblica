@@ -3,38 +3,265 @@
 import { useState, useEffect } from 'react';
 import { BookOpen, Sprout, Lightbulb, Sparkles } from 'lucide-react';
 import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
 
 export default function Home() {
   const [userName, setUserName] = useState<string>('');
   const [showWelcomeDialog, setShowWelcomeDialog] = useState(false);
-  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+  const [greeting, setGreeting] = useState<string>('');
+  const [mounted, setMounted] = useState(false);
+  const [versesReadToday, setVersesReadToday] = useState(0);
+  const [dailyGoal] = useState(2); // Meta diária de leituras
 
   useEffect(() => {
-    // Simula usuário (em produção viria do contexto/auth)
-    const storedName = localStorage.getItem('userName');
-    if (storedName) {
-      setUserName(storedName);
-      
-      // Verifica se deve mostrar diálogo de boas-vindas (a cada 12h)
-      const lastWelcome = localStorage.getItem('lastWelcome');
-      const now = Date.now();
-      if (!lastWelcome || now - parseInt(lastWelcome) > 12 * 60 * 60 * 1000) {
-        setShowWelcomeDialog(true);
-        localStorage.setItem('lastWelcome', now.toString());
-      }
+    setMounted(true);
+    
+    // Calcula saudação apenas no cliente
+    const hour = new Date().getHours();
+    if (hour < 12) {
+      setGreeting('Bom dia');
+    } else if (hour < 18) {
+      setGreeting('Boa tarde');
+    } else {
+      setGreeting('Boa noite');
     }
 
-    // Atualiza hora
-    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
-    return () => clearInterval(timer);
+    // Carrega dados do usuário
+    loadUserData();
+
+    // Atualiza a cada 30 segundos para refletir mudanças
+    const interval = setInterval(loadUserData, 30000);
+    return () => clearInterval(interval);
   }, []);
 
-  const getGreeting = () => {
-    const hour = currentTime.getHours();
-    if (hour < 12) return 'Bom dia';
-    if (hour < 18) return 'Boa tarde';
-    return 'Boa noite';
+  const loadUserData = async () => {
+    try {
+      // Verifica autenticação
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (user) {
+        // Busca dados do perfil
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('name')
+          .eq('id', user.id)
+          .single();
+
+        if (profile) {
+          const name = profile.name || localStorage.getItem('userName') || '';
+          setUserName(name);
+          
+          // Atualiza localStorage
+          if (name) localStorage.setItem('userName', name);
+
+          // Verifica se deve mostrar diálogo de boas-vindas (a cada 12h)
+          const lastWelcome = localStorage.getItem('lastWelcome');
+          const now = Date.now();
+          if (!lastWelcome || now - parseInt(lastWelcome) > 12 * 60 * 60 * 1000) {
+            setShowWelcomeDialog(true);
+            localStorage.setItem('lastWelcome', now.toString());
+          }
+        }
+
+        // Busca versículos lidos HOJE
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayISO = today.toISOString();
+
+        const { data: todayProgress, error: progressError } = await supabase
+          .from('user_verse_progress')
+          .select('id')
+          .eq('user_id', user.id)
+          .gte('read_at', todayISO);
+
+        if (!progressError && todayProgress) {
+          setVersesReadToday(todayProgress.length);
+          localStorage.setItem('versesReadToday', todayProgress.length.toString());
+        }
+      } else {
+        // Fallback para localStorage se não estiver autenticado
+        const storedName = localStorage.getItem('userName');
+        const storedVersesReadToday = parseInt(localStorage.getItem('versesReadToday') || '0');
+        
+        if (storedName) {
+          setUserName(storedName);
+          setVersesReadToday(storedVersesReadToday);
+          
+          const lastWelcome = localStorage.getItem('lastWelcome');
+          const now = Date.now();
+          if (!lastWelcome || now - parseInt(lastWelcome) > 12 * 60 * 60 * 1000) {
+            setShowWelcomeDialog(true);
+            localStorage.setItem('lastWelcome', now.toString());
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao carregar dados do usuário:', error);
+      
+      // Fallback para localStorage em caso de erro
+      const storedName = localStorage.getItem('userName');
+      const storedVersesReadToday = parseInt(localStorage.getItem('versesReadToday') || '0');
+      if (storedName) {
+        setUserName(storedName);
+        setVersesReadToday(storedVersesReadToday);
+      }
+    }
   };
+
+  // Calcula progresso do dia (baseado em versículos lidos hoje)
+  const dailyProgress = Math.min((versesReadToday / dailyGoal) * 100, 100);
+
+  // Previne hydration mismatch - não renderiza até montar no cliente
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 dark:from-gray-900 dark:via-purple-900/20 dark:to-blue-900/20">
+        {/* Header */}
+        <header className="p-6 pb-4">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <Sparkles className="w-6 h-6 text-yellow-500" />
+                  Luz da Palavra
+                </h1>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  Seu companheiro espiritual diário
+                </p>
+              </div>
+              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg shadow-lg">
+                ?
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Main Content */}
+        <main className="px-6 pb-24 pt-8">
+          <div className="max-w-4xl mx-auto">
+            {/* Saudação - placeholder durante SSR */}
+            <div className="mb-8 text-center">
+              <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+                &nbsp;
+              </h2>
+              <p className="text-lg text-gray-600 dark:text-gray-400">
+                Vamos seguir juntos?
+              </p>
+            </div>
+
+            {/* Três Botões Principais */}
+            <div className="grid gap-6 md:grid-cols-3">
+              {/* Versículo do Dia */}
+              <Link
+                href="/daily-verse"
+                className="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-500 to-purple-600 p-8 shadow-2xl hover:shadow-3xl transition-all duration-300 hover:scale-105"
+              >
+                <div className="relative z-10">
+                  <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                    <BookOpen className="w-8 h-8 text-white" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-white mb-2">
+                    Versículo do Dia
+                  </h3>
+                  <p className="text-blue-100">
+                    Sua palavra diária de inspiração
+                  </p>
+                </div>
+                <div className="absolute inset-0 bg-gradient-to-br from-white/0 to-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </Link>
+
+              {/* Estudo Permanente */}
+              <Link
+                href="/study"
+                className="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-green-500 to-emerald-600 p-8 shadow-2xl hover:shadow-3xl transition-all duration-300 hover:scale-105"
+              >
+                <div className="relative z-10">
+                  <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                    <Sprout className="w-8 h-8 text-white" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-white mb-2">
+                    Estudo Permanente
+                  </h3>
+                  <p className="text-green-100">
+                    Continue crescendo na palavra
+                  </p>
+                </div>
+                <div className="absolute inset-0 bg-gradient-to-br from-white/0 to-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </Link>
+
+              {/* Quero uma Luz */}
+              <Link
+                href="/light"
+                className="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-yellow-500 to-amber-600 p-8 shadow-2xl hover:shadow-3xl transition-all duration-300 hover:scale-105"
+              >
+                <div className="relative z-10">
+                  <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                    <Lightbulb className="w-8 h-8 text-white" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-white mb-2">
+                    Quero uma Luz
+                  </h3>
+                  <p className="text-yellow-100">
+                    Encontre conforto e direção
+                  </p>
+                </div>
+                <div className="absolute inset-0 bg-gradient-to-br from-white/0 to-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </Link>
+            </div>
+
+            {/* Progresso do Dia */}
+            <div className="mt-8 bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-semibold text-gray-900 dark:text-white">
+                  Seu progresso hoje
+                </h4>
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  0 / 2 leituras
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full transition-all duration-500"
+                  style={{ width: '0%' }}
+                />
+              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-3">
+                Continue assim! Cada passo conta na sua jornada. 🌱
+              </p>
+            </div>
+          </div>
+        </main>
+
+        {/* Bottom Navigation */}
+        <nav className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-6 py-4 shadow-2xl">
+          <div className="max-w-4xl mx-auto flex justify-around items-center">
+            <Link
+              href="/"
+              className="flex flex-col items-center gap-1 text-purple-600 dark:text-purple-400"
+            >
+              <Sparkles className="w-6 h-6" />
+              <span className="text-xs font-medium">Início</span>
+            </Link>
+            <Link
+              href="/study"
+              className="flex flex-col items-center gap-1 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+            >
+              <Sprout className="w-6 h-6" />
+              <span className="text-xs font-medium">Estudo</span>
+            </Link>
+            <Link
+              href="/profile"
+              className="flex flex-col items-center gap-1 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+            >
+              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-xs font-bold">
+                ?
+              </div>
+              <span className="text-xs font-medium">Perfil</span>
+            </Link>
+          </div>
+        </nav>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 dark:from-gray-900 dark:via-purple-900/20 dark:to-blue-900/20">
@@ -67,7 +294,7 @@ export default function Home() {
           {/* Saudação */}
           <div className="mb-8 text-center">
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-              {getGreeting()}{userName ? `, ${userName}` : ''}
+              {greeting}{userName ? `, ${userName}` : ''}
             </h2>
             <p className="text-lg text-gray-600 dark:text-gray-400">
               Vamos seguir juntos?
@@ -182,17 +409,20 @@ export default function Home() {
                 Seu progresso hoje
               </h4>
               <span className="text-sm text-gray-600 dark:text-gray-400">
-                0 / 2 leituras
+                {Math.min(versesReadToday, dailyGoal)} / {dailyGoal} leituras
               </span>
             </div>
             <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
               <div 
                 className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full transition-all duration-500"
-                style={{ width: '0%' }}
+                style={{ width: `${dailyProgress}%` }}
               />
             </div>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-3">
-              Continue assim! Cada passo conta na sua jornada. 🌱
+              {versesReadToday >= dailyGoal 
+                ? 'Parabéns! Você atingiu sua meta de hoje! 🎉'
+                : 'Continue assim! Cada passo conta na sua jornada. 🌱'
+              }
             </p>
           </div>
 
