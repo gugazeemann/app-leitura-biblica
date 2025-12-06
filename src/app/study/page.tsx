@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Sprout, Trophy, Calendar, Target, ChevronRight, Flame } from 'lucide-react';
+import { ArrowLeft, Sprout, Trophy, Calendar, Target, ChevronRight, Flame, Search, X } from 'lucide-react';
 import { GROWTH_LEVELS, DAILY_MISSIONS } from '@/lib/constants';
 import { GrowthLevel } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
+import Link from 'next/link';
 
 export default function StudyPage() {
   const router = useRouter();
@@ -17,6 +18,9 @@ export default function StudyPage() {
   const [reflectionsSharedToday, setReflectionsSharedToday] = useState(0);
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   useEffect(() => {
     loadUserData();
@@ -25,6 +29,48 @@ export default function StudyPage() {
     const interval = setInterval(loadUserData, 3000);
     return () => clearInterval(interval);
   }, []);
+
+  // Busca versículos quando o usuário digita
+  useEffect(() => {
+    const searchVerses = async () => {
+      if (searchQuery.trim().length < 2) {
+        setSearchResults([]);
+        setIsSearching(false);
+        return;
+      }
+
+      setIsSearching(true);
+
+      try {
+        // Busca versículos que contenham o texto da busca
+        const { data, error } = await supabase
+          .from('verses')
+          .select('id, book_id, chapter_number, verse_number, text')
+          .ilike('text', `%${searchQuery}%`)
+          .limit(10);
+
+        if (error) {
+          console.error('Erro na query:', error);
+          setSearchResults([]);
+        } else if (data && data.length > 0) {
+          console.log('Resultados encontrados:', data.length);
+          setSearchResults(data);
+        } else {
+          console.log('Nenhum resultado encontrado para:', searchQuery);
+          setSearchResults([]);
+        }
+      } catch (error) {
+        console.error('Erro ao buscar versículos:', error);
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    // Debounce: espera 300ms após o usuário parar de digitar
+    const timeoutId = setTimeout(searchVerses, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
 
   const loadUserData = async () => {
     try {
@@ -87,45 +133,76 @@ export default function StudyPage() {
           setLevel(currentLevel);
         }
 
-        // Busca versículos lidos HOJE (a partir da meia-noite)
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const todayISO = today.toISOString();
-
-        console.log('🔍 Buscando versículos lidos hoje desde:', todayISO);
-
-        const { data: todayProgress, error: progressError } = await supabase
+        // Busca versículos lidos HOJE - ajustado para fuso horário do Brasil (UTC-3)
+        console.log('🔍 Buscando versículos lidos hoje (Brasil)...');
+        
+        const now = new Date();
+        // Ajusta para horário do Brasil (UTC-3)
+        const brazilOffset = -3 * 60; // -3 horas em minutos
+        const localOffset = now.getTimezoneOffset(); // offset do navegador
+        const totalOffset = brazilOffset - localOffset;
+        
+        const brazilNow = new Date(now.getTime() + totalOffset * 60 * 1000);
+        const startOfDay = new Date(brazilNow.getFullYear(), brazilNow.getMonth(), brazilNow.getDate(), 0, 0, 0);
+        const endOfDay = new Date(brazilNow.getFullYear(), brazilNow.getMonth(), brazilNow.getDate(), 23, 59, 59);
+        
+        // Converte de volta para UTC para a query
+        const startOfDayUTC = new Date(startOfDay.getTime() - totalOffset * 60 * 1000);
+        const endOfDayUTC = new Date(endOfDay.getTime() - totalOffset * 60 * 1000);
+        
+        console.log('📅 Período de busca (Brasil):', {
+          inicio: startOfDay.toLocaleString('pt-BR'),
+          fim: endOfDay.toLocaleString('pt-BR'),
+          inicioUTC: startOfDayUTC.toISOString(),
+          fimUTC: endOfDayUTC.toISOString()
+        });
+        
+        const { data: todayVerses, error: versesError } = await supabase
           .from('user_verse_progress')
-          .select('id, read_at')
+          .select('id, read_at', { count: 'exact' })
           .eq('user_id', user.id)
-          .gte('read_at', todayISO);
+          .gte('read_at', startOfDayUTC.toISOString())
+          .lte('read_at', endOfDayUTC.toISOString());
 
-        if (!progressError && todayProgress) {
-          const count = todayProgress.length;
+        if (!versesError) {
+          const count = todayVerses?.length || 0;
           setVersesReadToday(count);
           localStorage.setItem('versesReadToday', count.toString());
           console.log('✅ Versículos lidos hoje:', count);
+          if (todayVerses && todayVerses.length > 0) {
+            console.log('📖 Registros encontrados:', todayVerses.map(v => ({
+              id: v.id,
+              read_at: new Date(v.read_at).toLocaleString('pt-BR')
+            })));
+          }
         } else {
-          console.error('Erro ao buscar progresso de hoje:', progressError);
+          console.error('❌ Erro ao buscar versículos de hoje:', versesError);
           setVersesReadToday(0);
         }
 
-        // Busca reflexões compartilhadas HOJE usando a nova tabela
-        console.log('🔍 Buscando reflexões compartilhadas hoje desde:', todayISO);
+        // Busca reflexões compartilhadas HOJE - ajustado para fuso horário do Brasil
+        console.log('🔍 Buscando reflexões compartilhadas hoje (Brasil)...');
 
         const { data: todayReflections, error: reflectionsError } = await supabase
           .from('user_reflections_v2')
-          .select('id, shared_at')
+          .select('id, shared_at', { count: 'exact' })
           .eq('user_id', user.id)
           .eq('shared', true)
-          .gte('shared_at', todayISO);
+          .gte('shared_at', startOfDayUTC.toISOString())
+          .lte('shared_at', endOfDayUTC.toISOString());
 
-        if (!reflectionsError && todayReflections) {
-          const count = todayReflections.length;
+        if (!reflectionsError) {
+          const count = todayReflections?.length || 0;
           setReflectionsSharedToday(count);
           console.log('✅ Reflexões compartilhadas hoje:', count);
+          if (todayReflections && todayReflections.length > 0) {
+            console.log('💭 Registros encontrados:', todayReflections.map(r => ({
+              id: r.id,
+              shared_at: new Date(r.shared_at).toLocaleString('pt-BR')
+            })));
+          }
         } else {
-          console.error('Erro ao buscar reflexões de hoje:', reflectionsError);
+          console.error('❌ Erro ao buscar reflexões de hoje:', reflectionsError);
           setReflectionsSharedToday(0);
         }
       } else {
@@ -147,7 +224,7 @@ export default function StudyPage() {
         setLevel(currentLevel);
       }
     } catch (error) {
-      console.error('Erro ao carregar dados do usuário:', error);
+      console.error('❌ Erro ao carregar dados do usuário:', error);
     } finally {
       setLoading(false);
     }
@@ -168,23 +245,23 @@ export default function StudyPage() {
     if (mission.requirement.type === 'read_verses') {
       // Usa versículos lidos HOJE
       current = versesReadToday;
-      console.log(`📊 Missão "${mission.title}": ${current}/${mission.requirement.count} versículos hoje`);
+      console.log(`📊 Missão \"${mission.title}\": ${current}/${mission.requirement.count} versículos hoje`);
     } else if (mission.requirement.type === 'share_reflection') {
       // Usa reflexões compartilhadas HOJE
       current = reflectionsSharedToday;
-      console.log(`📊 Missão "${mission.title}": ${current}/${mission.requirement.count} reflexões hoje`);
+      console.log(`📊 Missão \"${mission.title}\": ${current}/${mission.requirement.count} reflexões hoje`);
     } else if (mission.requirement.type === 'daily_verse') {
       // Verifica se leu pelo menos 1 versículo hoje
       current = versesReadToday > 0 ? 1 : 0;
-      console.log(`📊 Missão "${mission.title}": ${current}/${mission.requirement.count} (leu hoje: ${versesReadToday > 0 ? 'sim' : 'não'})`);
+      console.log(`📊 Missão \"${mission.title}\": ${current}/${mission.requirement.count} (leu hoje: ${versesReadToday > 0 ? 'sim' : 'não'})`);
     } else if (mission.requirement.type === 'study_plan') {
       // TODO: Implementar progresso em planos de estudo
       current = 0;
-      console.log(`📊 Missão "${mission.title}": ${current}/${mission.requirement.count} (não implementado)`);
+      console.log(`📊 Missão \"${mission.title}\": ${current}/${mission.requirement.count} (não implementado)`);
     }
 
     const completed = current >= mission.requirement.count;
-    console.log(`${completed ? '✅' : '⏳'} Missão "${mission.title}": ${completed ? 'COMPLETA' : 'EM PROGRESSO'}`);
+    console.log(`${completed ? '✅' : '⏳'} Missão \"${mission.title}\": ${completed ? 'COMPLETA' : 'EM PROGRESSO'}`);
 
     return {
       ...mission,
@@ -192,6 +269,11 @@ export default function StudyPage() {
       completed
     };
   });
+
+  const clearSearch = () => {
+    setSearchQuery('');
+    setSearchResults([]);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 dark:from-gray-900 dark:via-green-900/10 dark:to-emerald-900/10 pb-24">
@@ -237,6 +319,61 @@ export default function StudyPage() {
       </div>
 
       <div className="max-w-4xl mx-auto px-6 -mt-4">
+        {/* Campo de Busca */}
+        <div className="mb-6 relative">
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Buscar versículos, temas ou passagens..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-12 pr-12 py-4 rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 dark:focus:ring-green-400 shadow-lg transition-all"
+            />
+            {searchQuery && (
+              <button
+                onClick={clearSearch}
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
+          </div>
+
+          {/* Resultados da Busca */}
+          {searchQuery.trim().length >= 2 && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 max-h-96 overflow-y-auto z-50">
+              {isSearching ? (
+                <div className="p-6 text-center text-gray-500 dark:text-gray-400">
+                  Buscando...
+                </div>
+              ) : searchResults.length > 0 ? (
+                <div className="p-2">
+                  {searchResults.map((verse) => (
+                    <Link
+                      key={verse.id}
+                      href={`/study/read?verse=${verse.id}`}
+                      className="block p-4 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                      onClick={clearSearch}
+                    >
+                      <p className="font-semibold text-green-600 dark:text-green-400 text-sm mb-1">
+                        {verse.book_id} {verse.chapter_number}:{verse.verse_number}
+                      </p>
+                      <p className="text-gray-700 dark:text-gray-300 text-sm line-clamp-2">
+                        {verse.text}
+                      </p>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-6 text-center text-gray-500 dark:text-gray-400">
+                  Nenhum resultado encontrado para "{searchQuery}"
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Progress Card */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg mb-6">
           <div className="flex items-center justify-between mb-3">
@@ -303,21 +440,29 @@ export default function StudyPage() {
                 key={mission.id}
                 className={`flex items-center justify-between p-4 rounded-xl border transition-all ${
                   mission.completed
-                    ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                    ? 'bg-green-500 dark:bg-green-600 border-green-600 dark:border-green-700'
                     : 'bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-700'
                 }`}
               >
                 <div className="flex-1">
-                  <p className="font-medium text-gray-900 dark:text-white text-sm">
+                  <p className={`font-medium text-sm ${
+                    mission.completed 
+                      ? 'text-white' 
+                      : 'text-gray-900 dark:text-white'
+                  }`}>
                     {mission.title}
                   </p>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                  <p className={`text-xs mt-1 ${
+                    mission.completed 
+                      ? 'text-green-100' 
+                      : 'text-gray-600 dark:text-gray-400'
+                  }`}>
                     +{mission.points} pontos
                   </p>
                 </div>
                 <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
                   mission.completed
-                    ? 'bg-green-500 text-white'
+                    ? 'bg-white text-green-600'
                     : 'bg-gray-200 dark:bg-gray-600'
                 }`}>
                   {mission.completed ? (
