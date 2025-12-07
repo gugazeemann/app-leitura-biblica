@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { BookOpen, Sprout, Lightbulb, Sparkles, Search, X } from 'lucide-react';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
 export default function Home() {
   const [userName, setUserName] = useState<string>('');
@@ -46,24 +46,26 @@ export default function Home() {
         return;
       }
 
+      // Só busca se Supabase estiver configurado
+      if (!isSupabaseConfigured() || !supabase) {
+        setSearchResults([]);
+        setIsSearching(false);
+        return;
+      }
+
       setIsSearching(true);
 
       try {
         // Busca versículos que contenham o texto da busca
         const { data, error } = await supabase
           .from('verses')
-          .select('id, book_id, chapter_number, verse_number, text')
+          .select('*')
           .ilike('text', `%${searchQuery}%`)
           .limit(10);
 
-        if (error) {
-          console.error('Erro na query:', error);
-          setSearchResults([]);
-        } else if (data && data.length > 0) {
-          console.log('Resultados encontrados:', data.length);
+        if (!error && data) {
           setSearchResults(data);
         } else {
-          console.log('Nenhum resultado encontrado para:', searchQuery);
           setSearchResults([]);
         }
       } catch (error) {
@@ -74,13 +76,33 @@ export default function Home() {
       }
     };
 
-    // Debounce: espera 300ms após o usuário parar de digitar
-    const timeoutId = setTimeout(searchVerses, 300);
+    // Debounce: espera 500ms após o usuário parar de digitar
+    const timeoutId = setTimeout(searchVerses, 500);
     return () => clearTimeout(timeoutId);
   }, [searchQuery]);
 
   const loadUserData = async () => {
     try {
+      // Verifica se Supabase está configurado
+      if (!isSupabaseConfigured() || !supabase) {
+        // Fallback para localStorage
+        const storedName = localStorage.getItem('userName');
+        const storedVersesReadToday = parseInt(localStorage.getItem('versesReadToday') || '0');
+        
+        if (storedName) {
+          setUserName(storedName);
+          setVersesReadToday(storedVersesReadToday);
+          
+          const lastWelcome = localStorage.getItem('lastWelcome');
+          const now = Date.now();
+          if (!lastWelcome || now - parseInt(lastWelcome) > 12 * 60 * 60 * 1000) {
+            setShowWelcomeDialog(true);
+            localStorage.setItem('lastWelcome', now.toString());
+          }
+        }
+        return;
+      }
+
       // Verifica autenticação
       const { data: { user } } = await supabase.auth.getUser();
       
@@ -399,7 +421,7 @@ export default function Home() {
                   </div>
                 ) : (
                   <div className="p-6 text-center text-gray-500 dark:text-gray-400">
-                    Nenhum resultado encontrado para "{searchQuery}"
+                    Nenhum resultado encontrado
                   </div>
                 )}
               </div>
@@ -481,104 +503,104 @@ export default function Home() {
                   Estudo Permanente
                 </h3>
                 <p className="text-green-100">
-                    Continue crescendo na palavra
-                  </p>
-                </div>
-                <div className="absolute inset-0 bg-gradient-to-br from-white/0 to-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </Link>
-
-              {/* Quero uma Luz */}
-              <Link
-                href="/light"
-                className="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-yellow-500 to-amber-600 p-8 shadow-2xl hover:shadow-3xl transition-all duration-300 hover:scale-105"
-              >
-                <div className="relative z-10">
-                  <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                    <Lightbulb className="w-8 h-8 text-white" />
-                  </div>
-                  <h3 className="text-2xl font-bold text-white mb-2">
-                    Quero uma Luz
-                  </h3>
-                  <p className="text-yellow-100">
-                    Encontre conforto e direção
-                  </p>
-                </div>
-                <div className="absolute inset-0 bg-gradient-to-br from-white/0 to-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </Link>
-            </div>
-
-            {/* Progresso do Dia */}
-            <div className="mt-8 bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="font-semibold text-gray-900 dark:text-white">
-                  Seu progresso hoje
-                </h4>
-                <span className="text-sm text-gray-600 dark:text-gray-400">
-                  {Math.min(versesReadToday, dailyGoal)} / {dailyGoal} leituras
-                </span>
-              </div>
-              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
-                <div 
-                  className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full transition-all duration-500"
-                  style={{ width: `${dailyProgress}%` }}
-                />
-              </div>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-3">
-                {versesReadToday >= dailyGoal 
-                  ? 'Parabéns! Você atingiu sua meta de hoje! 🎉'
-                  : 'Continue assim! Cada passo conta na sua jornada. 🌱'
-                }
-              </p>
-            </div>
-
-            {/* CTA Onboarding (se não completou) */}
-            {!userName && (
-              <div className="mt-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl p-8 shadow-2xl text-center">
-                <h3 className="text-2xl font-bold text-white mb-3">
-                  Bem-vindo! 👋
-                </h3>
-                <p className="text-purple-100 mb-6">
-                  Vamos personalizar sua experiência para te ajudar melhor?
+                  Continue crescendo na palavra
                 </p>
-                <Link
-                  href="/onboarding"
-                  className="inline-block px-8 py-4 bg-white text-purple-600 font-bold rounded-xl hover:bg-purple-50 transition-colors shadow-lg"
-                >
-                  Começar agora
-                </Link>
               </div>
-            )}
-          </div>
-        </main>
+              <div className="absolute inset-0 bg-gradient-to-br from-white/0 to-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </Link>
 
-        {/* Bottom Navigation */}
-        <nav className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-6 py-4 shadow-2xl">
-          <div className="max-w-4xl mx-auto flex justify-around items-center">
+            {/* Quero uma Luz */}
             <Link
-              href="/"
-              className="flex flex-col items-center gap-1 text-purple-600 dark:text-purple-400"
+              href="/light"
+              className="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-yellow-500 to-amber-600 p-8 shadow-2xl hover:shadow-3xl transition-all duration-300 hover:scale-105"
             >
-              <Sparkles className="w-6 h-6" />
-              <span className="text-xs font-medium">Início</span>
-            </Link>
-            <Link
-              href="/study"
-              className="flex flex-col items-center gap-1 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
-            >
-              <Sprout className="w-6 h-6" />
-              <span className="text-xs font-medium">Estudo</span>
-            </Link>
-            <Link
-              href="/profile"
-              className="flex flex-col items-center gap-1 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
-            >
-              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-xs font-bold">
-                {userName ? userName.charAt(0).toUpperCase() : '?'}
+              <div className="relative z-10">
+                <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                  <Lightbulb className="w-8 h-8 text-white" />
+                </div>
+                <h3 className="text-2xl font-bold text-white mb-2">
+                  Quero uma Luz
+                </h3>
+                <p className="text-yellow-100">
+                  Encontre conforto e direção
+                </p>
               </div>
-              <span className="text-xs font-medium">Perfil</span>
+              <div className="absolute inset-0 bg-gradient-to-br from-white/0 to-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
             </Link>
           </div>
-        </nav>
-      </div>
-    );
-  }
+
+          {/* Progresso do Dia */}
+          <div className="mt-8 bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-semibold text-gray-900 dark:text-white">
+                Seu progresso hoje
+              </h4>
+              <span className="text-sm text-gray-600 dark:text-gray-400">
+                {Math.min(versesReadToday, dailyGoal)} / {dailyGoal} leituras
+              </span>
+            </div>
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
+              <div 
+                className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full transition-all duration-500"
+                style={{ width: `${dailyProgress}%` }}
+              />
+            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-3">
+              {versesReadToday >= dailyGoal 
+                ? 'Parabéns! Você atingiu sua meta de hoje! 🎉'
+                : 'Continue assim! Cada passo conta na sua jornada. 🌱'
+              }
+            </p>
+          </div>
+
+          {/* CTA Onboarding (se não completou) */}
+          {!userName && (
+            <div className="mt-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl p-8 shadow-2xl text-center">
+              <h3 className="text-2xl font-bold text-white mb-3">
+                Bem-vindo! 👋
+              </h3>
+              <p className="text-purple-100 mb-6">
+                Vamos personalizar sua experiência para te ajudar melhor?
+              </p>
+              <Link
+                href="/onboarding"
+                className="inline-block px-8 py-4 bg-white text-purple-600 font-bold rounded-xl hover:bg-purple-50 transition-colors shadow-lg"
+              >
+                Começar agora
+              </Link>
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* Bottom Navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-6 py-4 shadow-2xl">
+        <div className="max-w-4xl mx-auto flex justify-around items-center">
+          <Link
+            href="/"
+            className="flex flex-col items-center gap-1 text-purple-600 dark:text-purple-400"
+          >
+            <Sparkles className="w-6 h-6" />
+            <span className="text-xs font-medium">Início</span>
+          </Link>
+          <Link
+            href="/study"
+            className="flex flex-col items-center gap-1 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+          >
+            <Sprout className="w-6 h-6" />
+            <span className="text-xs font-medium">Estudo</span>
+          </Link>
+          <Link
+            href="/profile"
+            className="flex flex-col items-center gap-1 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+          >
+            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-xs font-bold">
+              {userName ? userName.charAt(0).toUpperCase() : '?'}
+            </div>
+            <span className="text-xs font-medium">Perfil</span>
+          </Link>
+        </div>
+      </nav>
+    </div>
+  );
+}

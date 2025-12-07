@@ -45,18 +45,13 @@ export default function StudyPage() {
         // Busca versículos que contenham o texto da busca
         const { data, error } = await supabase
           .from('verses')
-          .select('id, book_id, chapter_number, verse_number, text')
+          .select('*')
           .ilike('text', `%${searchQuery}%`)
           .limit(10);
 
-        if (error) {
-          console.error('Erro na query:', error);
-          setSearchResults([]);
-        } else if (data && data.length > 0) {
-          console.log('Resultados encontrados:', data.length);
+        if (!error && data) {
           setSearchResults(data);
         } else {
-          console.log('Nenhum resultado encontrado para:', searchQuery);
           setSearchResults([]);
         }
       } catch (error) {
@@ -67,8 +62,8 @@ export default function StudyPage() {
       }
     };
 
-    // Debounce: espera 300ms após o usuário parar de digitar
-    const timeoutId = setTimeout(searchVerses, 300);
+    // Debounce: espera 500ms após o usuário parar de digitar
+    const timeoutId = setTimeout(searchVerses, 500);
     return () => clearTimeout(timeoutId);
   }, [searchQuery]);
 
@@ -245,23 +240,23 @@ export default function StudyPage() {
     if (mission.requirement.type === 'read_verses') {
       // Usa versículos lidos HOJE
       current = versesReadToday;
-      console.log(`📊 Missão \"${mission.title}\": ${current}/${mission.requirement.count} versículos hoje`);
+      console.log(`📊 Missão "${mission.title}": ${current}/${mission.requirement.count} versículos hoje`);
     } else if (mission.requirement.type === 'share_reflection') {
       // Usa reflexões compartilhadas HOJE
       current = reflectionsSharedToday;
-      console.log(`📊 Missão \"${mission.title}\": ${current}/${mission.requirement.count} reflexões hoje`);
+      console.log(`📊 Missão "${mission.title}": ${current}/${mission.requirement.count} reflexões hoje`);
     } else if (mission.requirement.type === 'daily_verse') {
       // Verifica se leu pelo menos 1 versículo hoje
       current = versesReadToday > 0 ? 1 : 0;
-      console.log(`📊 Missão \"${mission.title}\": ${current}/${mission.requirement.count} (leu hoje: ${versesReadToday > 0 ? 'sim' : 'não'})`);
+      console.log(`📊 Missão "${mission.title}": ${current}/${mission.requirement.count} (leu hoje: ${versesReadToday > 0 ? 'sim' : 'não'})`);
     } else if (mission.requirement.type === 'study_plan') {
       // TODO: Implementar progresso em planos de estudo
       current = 0;
-      console.log(`📊 Missão \"${mission.title}\": ${current}/${mission.requirement.count} (não implementado)`);
+      console.log(`📊 Missão "${mission.title}": ${current}/${mission.requirement.count} (não implementado)`);
     }
 
     const completed = current >= mission.requirement.count;
-    console.log(`${completed ? '✅' : '⏳'} Missão \"${mission.title}\": ${completed ? 'COMPLETA' : 'EM PROGRESSO'}`);
+    console.log(`${completed ? '✅' : '⏳'} Missão "${mission.title}": ${completed ? 'COMPLETA' : 'EM PROGRESSO'}`);
 
     return {
       ...mission,
@@ -367,7 +362,7 @@ export default function StudyPage() {
                 </div>
               ) : (
                 <div className="p-6 text-center text-gray-500 dark:text-gray-400">
-                  Nenhum resultado encontrado para "{searchQuery}"
+                  Nenhum resultado encontrado
                 </div>
               )}
             </div>
