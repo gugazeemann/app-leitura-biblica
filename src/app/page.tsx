@@ -56,18 +56,56 @@ export default function Home() {
       setIsSearching(true);
 
       try {
-        // Busca versículos que contenham o texto da busca
-        const { data, error } = await supabase
+        // 1. Busca todos os livros primeiro
+        const { data: booksData, error: booksError } = await supabase
+          .from('books')
+          .select('*');
+
+        if (booksError || !booksData) {
+          console.error('Erro ao buscar livros:', booksError);
+          setSearchResults([]);
+          setIsSearching(false);
+          return;
+        }
+
+        // Cria mapa de livros
+        const booksMap = new Map(booksData.map(book => [book.id, book]));
+
+        // 2. Busca versículos SEM JOIN
+        const { data: versesData, error: versesError } = await supabase
           .from('verses')
-          .select('*')
+          .select('id, verse_number, chapter_number, text, book_id')
           .ilike('text', `%${searchQuery}%`)
           .limit(10);
 
-        if (!error && data) {
-          setSearchResults(data);
-        } else {
+        if (versesError) {
+          console.error('Erro na busca:', versesError);
           setSearchResults([]);
+          setIsSearching(false);
+          return;
         }
+
+        if (!versesData || versesData.length === 0) {
+          setSearchResults([]);
+          setIsSearching(false);
+          return;
+        }
+
+        // 3. Faz JOIN manual no JavaScript
+        const results = versesData.map(verse => {
+          const book = booksMap.get(verse.book_id);
+          return {
+            id: verse.id,
+            verse_number: verse.verse_number,
+            chapter_number: verse.chapter_number,
+            text: verse.text,
+            book_id: verse.book_id,
+            book_name: book?.name || 'Livro',
+            book_abbreviation: book?.abbreviation || ''
+          };
+        });
+
+        setSearchResults(results);
       } catch (error) {
         console.error('Erro ao buscar versículos:', error);
         setSearchResults([]);
@@ -411,7 +449,7 @@ export default function Home() {
                         onClick={clearSearch}
                       >
                         <p className="font-semibold text-purple-600 dark:text-purple-400 text-sm mb-1">
-                          {verse.book_id} {verse.chapter_number}:{verse.verse_number}
+                          {verse.book_name} {verse.chapter_number}:{verse.verse_number}
                         </p>
                         <p className="text-gray-700 dark:text-gray-300 text-sm line-clamp-2">
                           {verse.text}
@@ -526,6 +564,30 @@ export default function Home() {
                 </p>
               </div>
               <div className="absolute inset-0 bg-gradient-to-br from-white/0 to-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </Link>
+          </div>
+
+          {/* Botão Todos os Versículos */}
+          <div className="mt-6">
+            <Link
+              href="/verses"
+              className="group relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 p-6 shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-[1.02] flex items-center justify-between"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <BookOpen className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-white">
+                    Todos os Versículos
+                  </h3>
+                  <p className="text-indigo-100 text-sm">
+                    Explore a Bíblia completa com filtros e busca
+                  </p>
+                </div>
+              </div>
+              <Search className="w-6 h-6 text-white/80 group-hover:text-white transition-colors" />
+              <div className="absolute inset-0 bg-gradient-to-r from-white/0 to-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
             </Link>
           </div>
 
