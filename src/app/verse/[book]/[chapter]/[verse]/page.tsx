@@ -1,231 +1,403 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Lightbulb, BookOpen, MessageSquare, Volume2, VolumeX } from 'lucide-react';
+import { BookOpen, ChevronLeft, ChevronRight, Home, Share2, Heart } from 'lucide-react';
 import Link from 'next/link';
-import { getVerses, getVerse } from '@/lib/data';
-import { BOOKS } from '@/lib/constants';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+
+interface Book {
+  id: string; // slug do livro
+  name: string;
+  chapters: number;
+  testament: 'old' | 'new';
+}
+
+interface Verse {
+  id: number;
+  book_id: string; // slug do livro
+  chapter_number: number;
+  verse_number: number;
+  text: string;
+}
+
+interface Navigation {
+  previous: { book: string; chapter: number; verse: number } | null;
+  next: { book: string; chapter: number; verse: number } | null;
+}
 
 export default function VersePage() {
   const params = useParams();
   const router = useRouter();
-  const bookId = params.book as string;
+  const [verse, setVerse] = useState<Verse | null>(null);
+  const [book, setBook] = useState<Book | null>(null);
+  const [navigation, setNavigation] = useState<Navigation>({ previous: null, next: null });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const bookSlug = params.book as string;
   const chapterNum = parseInt(params.chapter as string);
   const verseNum = parseInt(params.verse as string);
 
-  const [allVerses, setAllVerses] = useState<any[]>([]);
-  const [currentVerse, setCurrentVerse] = useState<any>(null);
-  const [bookData, setBookData] = useState<any>(null);
-  const [showInterpretation, setShowInterpretation] = useState(false);
-  const [interpretation, setInterpretation] = useState('');
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
-
   useEffect(() => {
-    // Buscar dados do livro
-    const book = BOOKS.find(b => b.id === bookId);
-    setBookData(book);
+    loadVerse();
+  }, [bookSlug, chapterNum, verseNum]);
 
-    // Buscar todos os versículos do capítulo
-    const verses = getVerses(bookId, chapterNum);
-    setAllVerses(verses);
+  const loadVerse = async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-    // Buscar versículo atual
-    const verse = getVerse(bookId, chapterNum, verseNum);
-    setCurrentVerse(verse);
-  }, [bookId, chapterNum, verseNum]);
-
-  // Limpar síntese de voz ao desmontar componente
-  useEffect(() => {
-    return () => {
-      if (speechRef.current) {
-        window.speechSynthesis.cancel();
+      if (!isSupabaseConfigured() || !supabase) {
+        setError('Supabase não está configurado.');
+        setLoading(false);
+        return;
       }
-    };
-  }, []);
 
-  const handlePlayAudio = () => {
-    if (!currentVerse) return;
+      // Carregar informações do livro (id é o slug)
+      const { data: bookData, error: bookError } = await supabase
+        .from('books')
+        .select('*')
+        .eq('id', bookSlug)
+        .single();
 
-    // Se já está tocando, parar
-    if (isSpeaking) {
-      window.speechSynthesis.cancel();
-      setIsSpeaking(false);
-      setIsPlaying(false);
-      return;
+      if (bookError || !bookData) {
+        setError('Livro não encontrado.');
+        setLoading(false);
+        return;
+      }
+
+      setBook(bookData);
+
+      // Carregar versículo atual
+      const { data: verseData, error: verseError } = await supabase
+        .from('verses')
+        .select('*')
+        .eq('book_id', bookData.id)
+        .eq('chapter_number', chapterNum)
+        .eq('verse_number', verseNum)
+        .single();
+
+      if (verseError || !verseData) {
+        setError('Versículo não encontrado.');
+        setLoading(false);
+        return;
+      }
+
+      setVerse(verseData);
+
+      // Calcular navegação (versículo anterior e próximo)
+      await calculateNavigation(bookData, verseData);
+
+      setLoading(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao carregar versículo');
+      setLoading(false);
     }
-
-    // Criar nova síntese de voz
-    const utterance = new SpeechSynthesisUtterance(currentVerse.text);
-    utterance.lang = 'pt-BR';
-    utterance.rate = 0.9; // Velocidade um pouco mais lenta para melhor compreensão
-    utterance.pitch = 1;
-    utterance.volume = 1;
-
-    utterance.onstart = () => {
-      setIsSpeaking(true);
-      setIsPlaying(true);
-    };
-
-    utterance.onend = () => {
-      setIsSpeaking(false);
-      setIsPlaying(false);
-    };
-
-    utterance.onerror = () => {
-      setIsSpeaking(false);
-      setIsPlaying(false);
-    };
-
-    speechRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
   };
 
-  if (!currentVerse || !bookData) {
+  const calculateNavigation = async (currentBook: Book, currentVerse: Verse) => {
+    if (!supabase) return;
+
+    // Buscar versículo anterior
+    let previousVerse = null;
+    
+    // Tentar versículo anterior no mesmo capítulo
+    const { data: prevInChapter } = await supabase
+      .from('verses')
+      .select('*')
+      .eq('book_id', currentBook.id)
+      .eq('chapter_number', currentVerse.chapter_number)
+      .lt('verse_number', currentVerse.verse_number)
+      .order('verse_number', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (prevInChapter) {
+      previousVerse = {
+        book: currentBook.id,
+        chapter: prevInChapter.chapter_number,
+        verse: prevInChapter.verse_number
+      };
+    } else {
+      // Tentar último versículo do capítulo anterior
+      const { data: prevChapter } = await supabase
+        .from('verses')
+        .select('*')
+        .eq('book_id', currentBook.id)
+        .lt('chapter_number', currentVerse.chapter_number)
+        .order('chapter_number', { ascending: false })
+        .order('verse_number', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (prevChapter) {
+        previousVerse = {
+          book: currentBook.id,
+          chapter: prevChapter.chapter_number,
+          verse: prevChapter.verse_number
+        };
+      } else {
+        // Tentar último versículo do livro anterior
+        const { data: prevBook } = await supabase
+          .from('books')
+          .select('*')
+          .lt('id', currentBook.id)
+          .order('id', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (prevBook) {
+          const { data: lastVerse } = await supabase
+            .from('verses')
+            .select('*')
+            .eq('book_id', prevBook.id)
+            .order('chapter_number', { ascending: false })
+            .order('verse_number', { ascending: false })
+            .limit(1)
+            .single();
+
+          if (lastVerse) {
+            previousVerse = {
+              book: prevBook.id,
+              chapter: lastVerse.chapter_number,
+              verse: lastVerse.verse_number
+            };
+          }
+        }
+      }
+    }
+
+    // Buscar próximo versículo
+    let nextVerse = null;
+
+    // Tentar próximo versículo no mesmo capítulo
+    const { data: nextInChapter } = await supabase
+      .from('verses')
+      .select('*')
+      .eq('book_id', currentBook.id)
+      .eq('chapter_number', currentVerse.chapter_number)
+      .gt('verse_number', currentVerse.verse_number)
+      .order('verse_number', { ascending: true })
+      .limit(1)
+      .single();
+
+    if (nextInChapter) {
+      nextVerse = {
+        book: currentBook.id,
+        chapter: nextInChapter.chapter_number,
+        verse: nextInChapter.verse_number
+      };
+    } else {
+      // Tentar primeiro versículo do próximo capítulo
+      const { data: nextChapter } = await supabase
+        .from('verses')
+        .select('*')
+        .eq('book_id', currentBook.id)
+        .gt('chapter_number', currentVerse.chapter_number)
+        .order('chapter_number', { ascending: true })
+        .order('verse_number', { ascending: true })
+        .limit(1)
+        .single();
+
+      if (nextChapter) {
+        nextVerse = {
+          book: currentBook.id,
+          chapter: nextChapter.chapter_number,
+          verse: nextChapter.verse_number
+        };
+      } else {
+        // Tentar primeiro versículo do próximo livro
+        const { data: nextBook } = await supabase
+          .from('books')
+          .select('*')
+          .gt('id', currentBook.id)
+          .order('id', { ascending: true })
+          .limit(1)
+          .single();
+
+        if (nextBook) {
+          const { data: firstVerse } = await supabase
+            .from('verses')
+            .select('*')
+            .eq('book_id', nextBook.id)
+            .order('chapter_number', { ascending: true })
+            .order('verse_number', { ascending: true })
+            .limit(1)
+            .single();
+
+          if (firstVerse) {
+            nextVerse = {
+              book: nextBook.id,
+              chapter: firstVerse.chapter_number,
+              verse: firstVerse.verse_number
+            };
+          }
+        }
+      }
+    }
+
+    setNavigation({ previous: previousVerse, next: nextVerse });
+  };
+
+  const handleShare = async () => {
+    const text = `${book?.name} ${chapterNum}:${verseNum}\n\n"${verse?.text}"\n\n`;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({ text });
+      } catch (err) {
+        copyToClipboard(text);
+      }
+    } else {
+      copyToClipboard(text);
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900 flex items-center justify-center">
-        <div className="text-slate-600 dark:text-slate-400">Carregando...</div>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 dark:from-gray-900 dark:via-purple-900/20 dark:to-blue-900/20 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-700 dark:text-gray-300 text-lg">Carregando versículo...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !verse || !book) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 dark:from-gray-900 dark:via-purple-900/20 dark:to-blue-900/20 flex items-center justify-center p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 shadow-2xl max-w-md w-full text-center">
+          <BookOpen className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">Versículo não encontrado</h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">{error || 'Este versículo não existe.'}</p>
+          <Link
+            href="/verses"
+            className="inline-block px-6 py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors font-semibold"
+          >
+            Ver todos os versículos
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
-      {/* Header fixo */}
-      <div className="sticky top-0 z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg border-b border-slate-200 dark:border-slate-700">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => router.back()}
-              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-            </button>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 dark:from-gray-900 dark:via-purple-900/20 dark:to-blue-900/20">
+      {/* Header */}
+      <header className="bg-white dark:bg-gray-800 shadow-lg">
+        <div className="max-w-4xl mx-auto p-6 flex items-center justify-between">
+          <Link
+            href="/verses"
+            className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+          >
+            <ChevronLeft className="w-5 h-5" />
+            <span className="font-semibold">Voltar</span>
+          </Link>
+          <Link
+            href="/"
+            className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors"
+          >
+            <Home className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+          </Link>
+        </div>
+      </header>
 
-            <div className="flex-1 text-center">
-              <Link
-                href={`/study?book=${bookId}`}
-                className="text-lg font-semibold text-slate-900 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-              >
-                {bookData.name}
-              </Link>
-              <span className="mx-2 text-slate-400">·</span>
-              <Link
-                href={`/chapter/${bookId}/${chapterNum}`}
-                className="text-lg font-semibold text-slate-900 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-              >
-                Capítulo {chapterNum}
-              </Link>
+      {/* Conteúdo Principal */}
+      <main className="max-w-4xl mx-auto p-6 py-12">
+        <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-8 md:p-12">
+          {/* Referência */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-purple-100 dark:bg-purple-900/30 rounded-full mb-4">
+              <BookOpen className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              <span className="text-purple-600 dark:text-purple-400 font-semibold">
+                {book.name}
+              </span>
             </div>
+            <h1 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-2">
+              {book.name} {chapterNum}:{verseNum}
+            </h1>
+            <p className="text-gray-600 dark:text-gray-400">
+              {book.testament === 'old' ? 'Antigo Testamento' : 'Novo Testamento'}
+            </p>
+          </div>
 
-            <div className="w-9" />
+          {/* Texto do Versículo */}
+          <div className="mb-8">
+            <blockquote className="text-xl md:text-2xl text-gray-800 dark:text-gray-200 leading-relaxed text-center italic border-l-4 border-purple-500 pl-6 py-4">
+              "{verse.text}"
+            </blockquote>
+          </div>
+
+          {/* Ações */}
+          <div className="flex gap-3 justify-center mb-8">
+            <button
+              onClick={handleShare}
+              className="flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors font-semibold shadow-lg hover:shadow-xl"
+            >
+              <Share2 className="w-5 h-5" />
+              {copied ? 'Copiado!' : 'Compartilhar'}
+            </button>
+            <button className="flex items-center gap-2 px-6 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-semibold">
+              <Heart className="w-5 h-5" />
+              Favoritar
+            </button>
+          </div>
+
+          {/* Navegação */}
+          <div className="flex gap-4 pt-8 border-t border-gray-200 dark:border-gray-700">
+            {navigation.previous ? (
+              <Link
+                href={`/verse/${navigation.previous.book}/${navigation.previous.chapter}/${navigation.previous.verse}`}
+                className="flex-1 flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
+              >
+                <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center group-hover:bg-purple-200 dark:group-hover:bg-purple-900/50 transition-colors">
+                  <ChevronLeft className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div className="text-left">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-semibold uppercase">Anterior</p>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                    Versículo {navigation.previous.verse}
+                  </p>
+                </div>
+              </Link>
+            ) : (
+              <div className="flex-1 p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl opacity-50 cursor-not-allowed">
+                <p className="text-sm text-gray-400 dark:text-gray-500 text-center">Primeiro versículo</p>
+              </div>
+            )}
+
+            {navigation.next ? (
+              <Link
+                href={`/verse/${navigation.next.book}/${navigation.next.chapter}/${navigation.next.verse}`}
+                className="flex-1 flex items-center justify-end gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
+              >
+                <div className="text-right">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-semibold uppercase">Próximo</p>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                    Versículo {navigation.next.verse}
+                  </p>
+                </div>
+                <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center group-hover:bg-purple-200 dark:group-hover:bg-purple-900/50 transition-colors">
+                  <ChevronRight className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                </div>
+              </Link>
+            ) : (
+              <div className="flex-1 p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl opacity-50 cursor-not-allowed">
+                <p className="text-sm text-gray-400 dark:text-gray-500 text-center">Último versículo</p>
+              </div>
+            )}
           </div>
         </div>
-      </div>
-
-      {/* Conteúdo com rolagem contínua */}
-      <div className="max-w-3xl mx-auto px-4 py-8">
-        <div className="space-y-8">
-          {allVerses.map((verse) => (
-            <div
-              key={verse.verse}
-              id={`verse-${verse.verse}`}
-              className={`scroll-mt-24 transition-all duration-300 ${
-                verse.verse === verseNum
-                  ? 'bg-blue-50 dark:bg-blue-950/30 -mx-4 px-4 py-6 rounded-2xl border-l-4 border-blue-500'
-                  : 'py-2'
-              }`}
-            >
-              <div className="flex gap-4">
-                <div className="flex-shrink-0 w-12 text-right">
-                  <span className="text-sm font-bold text-slate-400 dark:text-slate-500">
-                    {verse.verse}
-                  </span>
-                </div>
-                <p className="flex-1 text-lg leading-relaxed text-slate-700 dark:text-slate-300">
-                  {verse.text}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Botões de ação */}
-        <div className="mt-12 space-y-4">
-          {/* Botão de Áudio */}
-          <button
-            onClick={handlePlayAudio}
-            className={`w-full rounded-2xl p-6 hover:shadow-xl transition-all duration-300 flex items-center justify-center gap-3 ${
-              isPlaying
-                ? 'bg-gradient-to-r from-red-500 to-red-600 text-white'
-                : 'bg-gradient-to-r from-green-500 to-green-600 text-white'
-            }`}
-          >
-            {isPlaying ? (
-              <>
-                <VolumeX className="w-6 h-6" />
-                <span className="text-lg font-semibold">Parar áudio</span>
-              </>
-            ) : (
-              <>
-                <Volume2 className="w-6 h-6" />
-                <span className="text-lg font-semibold">Escutar versículo</span>
-              </>
-            )}
-          </button>
-
-          <button
-            onClick={() => setShowInterpretation(!showInterpretation)}
-            className="w-full bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-2xl p-6 hover:shadow-xl transition-all duration-300 flex items-center justify-center gap-3"
-          >
-            <MessageSquare className="w-6 h-6" />
-            <span className="text-lg font-semibold">
-              {showInterpretation ? 'Ocultar interpretação' : 'Compartilhar sua interpretação'}
-            </span>
-          </button>
-
-          {showInterpretation && (
-            <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border-2 border-slate-200 dark:border-slate-700 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Como você interpreta esse versículo?
-                </label>
-                <textarea
-                  value={interpretation}
-                  onChange={(e) => setInterpretation(e.target.value)}
-                  placeholder="Compartilhe seus pensamentos..."
-                  className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-purple-500 dark:focus:border-purple-400 transition-colors min-h-32 resize-none"
-                />
-              </div>
-              <button className="w-full bg-purple-600 text-white rounded-xl py-3 font-semibold hover:bg-purple-700 transition-colors">
-                Salvar interpretação
-              </button>
-            </div>
-          )}
-
-          <Link
-            href="/light"
-            className="block w-full bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-2xl p-6 hover:shadow-xl transition-all duration-300"
-          >
-            <div className="flex items-center justify-center gap-3">
-              <Lightbulb className="w-6 h-6" />
-              <span className="text-lg font-semibold">Quero uma luz</span>
-            </div>
-          </Link>
-
-          <Link
-            href="/study"
-            className="block w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-2xl p-6 hover:shadow-xl transition-all duration-300"
-          >
-            <div className="flex items-center justify-center gap-3">
-              <BookOpen className="w-6 h-6" />
-              <span className="text-lg font-semibold">Continuar estudo</span>
-            </div>
-          </Link>
-        </div>
-      </div>
+      </main>
     </div>
   );
 }

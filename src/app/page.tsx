@@ -8,7 +8,7 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 export default function Home() {
   const [userName, setUserName] = useState<string>('');
   const [showWelcomeDialog, setShowWelcomeDialog] = useState(false);
-  const [greeting, setGreeting] = useState<string>('');
+  const [greeting, setGreeting] = useState<string>('Olá');
   const [mounted, setMounted] = useState(false);
   const [versesReadToday, setVersesReadToday] = useState(0);
   const [dailyGoal] = useState(2); // Meta diária de leituras
@@ -62,7 +62,6 @@ export default function Home() {
           .select('*');
 
         if (booksError || !booksData) {
-          console.error('Erro ao buscar livros:', booksError);
           setSearchResults([]);
           setIsSearching(false);
           return;
@@ -79,7 +78,6 @@ export default function Home() {
           .limit(10);
 
         if (versesError) {
-          console.error('Erro na busca:', versesError);
           setSearchResults([]);
           setIsSearching(false);
           return;
@@ -107,7 +105,6 @@ export default function Home() {
 
         setSearchResults(results);
       } catch (error) {
-        console.error('Erro ao buscar versículos:', error);
         setSearchResults([]);
       } finally {
         setIsSearching(false);
@@ -124,18 +121,20 @@ export default function Home() {
       // Verifica se Supabase está configurado
       if (!isSupabaseConfigured() || !supabase) {
         // Fallback para localStorage
-        const storedName = localStorage.getItem('userName');
-        const storedVersesReadToday = parseInt(localStorage.getItem('versesReadToday') || '0');
-        
-        if (storedName) {
-          setUserName(storedName);
-          setVersesReadToday(storedVersesReadToday);
+        if (typeof window !== 'undefined') {
+          const storedName = localStorage.getItem('userName');
+          const storedVersesReadToday = parseInt(localStorage.getItem('versesReadToday') || '0');
           
-          const lastWelcome = localStorage.getItem('lastWelcome');
-          const now = Date.now();
-          if (!lastWelcome || now - parseInt(lastWelcome) > 12 * 60 * 60 * 1000) {
-            setShowWelcomeDialog(true);
-            localStorage.setItem('lastWelcome', now.toString());
+          if (storedName) {
+            setUserName(storedName);
+            setVersesReadToday(storedVersesReadToday);
+            
+            const lastWelcome = localStorage.getItem('lastWelcome');
+            const now = Date.now();
+            if (!lastWelcome || now - parseInt(lastWelcome) > 12 * 60 * 60 * 1000) {
+              setShowWelcomeDialog(true);
+              localStorage.setItem('lastWelcome', now.toString());
+            }
           }
         }
         return;
@@ -152,7 +151,7 @@ export default function Home() {
           .eq('id', user.id)
           .single();
 
-        if (profile) {
+        if (profile && typeof window !== 'undefined') {
           const name = profile.name || localStorage.getItem('userName') || '';
           setUserName(name);
           
@@ -179,36 +178,38 @@ export default function Home() {
           .eq('user_id', user.id)
           .gte('read_at', todayISO);
 
-        if (!progressError && todayProgress) {
+        if (!progressError && todayProgress && typeof window !== 'undefined') {
           setVersesReadToday(todayProgress.length);
           localStorage.setItem('versesReadToday', todayProgress.length.toString());
         }
       } else {
         // Fallback para localStorage se não estiver autenticado
-        const storedName = localStorage.getItem('userName');
-        const storedVersesReadToday = parseInt(localStorage.getItem('versesReadToday') || '0');
-        
-        if (storedName) {
-          setUserName(storedName);
-          setVersesReadToday(storedVersesReadToday);
+        if (typeof window !== 'undefined') {
+          const storedName = localStorage.getItem('userName');
+          const storedVersesReadToday = parseInt(localStorage.getItem('versesReadToday') || '0');
           
-          const lastWelcome = localStorage.getItem('lastWelcome');
-          const now = Date.now();
-          if (!lastWelcome || now - parseInt(lastWelcome) > 12 * 60 * 60 * 1000) {
-            setShowWelcomeDialog(true);
-            localStorage.setItem('lastWelcome', now.toString());
+          if (storedName) {
+            setUserName(storedName);
+            setVersesReadToday(storedVersesReadToday);
+            
+            const lastWelcome = localStorage.getItem('lastWelcome');
+            const now = Date.now();
+            if (!lastWelcome || now - parseInt(lastWelcome) > 12 * 60 * 60 * 1000) {
+              setShowWelcomeDialog(true);
+              localStorage.setItem('lastWelcome', now.toString());
+            }
           }
         }
       }
     } catch (error) {
-      console.error('Erro ao carregar dados do usuário:', error);
-      
       // Fallback para localStorage em caso de erro
-      const storedName = localStorage.getItem('userName');
-      const storedVersesReadToday = parseInt(localStorage.getItem('versesReadToday') || '0');
-      if (storedName) {
-        setUserName(storedName);
-        setVersesReadToday(storedVersesReadToday);
+      if (typeof window !== 'undefined') {
+        const storedName = localStorage.getItem('userName');
+        const storedVersesReadToday = parseInt(localStorage.getItem('versesReadToday') || '0');
+        if (storedName) {
+          setUserName(storedName);
+          setVersesReadToday(storedVersesReadToday);
+        }
       }
     }
   };
