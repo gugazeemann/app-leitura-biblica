@@ -12,7 +12,8 @@ import {
   Heart,
   Flame,
   ChevronRight,
-  LogOut
+  LogOut,
+  Edit
 } from 'lucide-react';
 import { GROWTH_LEVELS } from '@/lib/constants';
 import { GrowthLevel } from '@/lib/types';
@@ -192,6 +193,19 @@ export default function ProfilePage() {
         {/* Menu Options */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden mb-6">
           <button
+            onClick={() => router.push('/profile/edit')}
+            className="w-full p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-b border-gray-200 dark:border-gray-700"
+          >
+            <div className="flex items-center gap-3">
+              <Edit className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+              <span className="font-medium text-gray-900 dark:text-white">
+                Editar Perfil
+              </span>
+            </div>
+            <ChevronRight className="w-5 h-5 text-gray-400" />
+          </button>
+
+          <button
             onClick={() => router.push('/gamification')}
             className="w-full p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-b border-gray-200 dark:border-gray-700"
           >
@@ -242,7 +256,7 @@ export default function ProfilePage() {
               Desbloqueie modo artístico, comunidades, estudos avançados e muito mais!
             </p>
             <button
-              onClick={() => router.push('/premium')}
+              onClick={() => router.push('/plans')}
               className="px-6 py-3 rounded-xl bg-white text-purple-600 font-medium hover:bg-purple-50 transition-colors shadow-lg"
             >
               Ver planos

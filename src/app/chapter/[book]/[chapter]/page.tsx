@@ -177,59 +177,75 @@ export default function ChapterPage() {
 
       {/* Conteúdo - Leitura contínua */}
       <div className="max-w-3xl mx-auto px-4 py-8">
-        <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-lg border-2 border-slate-200 dark:border-slate-700">
-          <div className="space-y-6">
-            {verses.map((verse) => (
-              <Link
-                key={verse.verse}
-                href={`/verse/${bookId}/${chapterNum}/${verse.verse}`}
-                className="block group hover:bg-slate-50 dark:hover:bg-slate-700/50 -mx-4 px-4 py-4 rounded-xl transition-all duration-200"
-              >
-                <div className="flex gap-4">
-                  <div className="flex-shrink-0 w-12 text-right">
-                    <span className="text-sm font-bold text-slate-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors">
-                      {verse.verse}
-                    </span>
-                  </div>
-                  <p className="flex-1 text-lg leading-relaxed text-slate-700 dark:text-slate-300">
-                    {verse.text}
-                  </p>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
+        {verses.length > 0 ? (
+          <>
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-lg border-2 border-slate-200 dark:border-slate-700">
+              <div className="space-y-6">
+                {verses.map((verse) => (
+                  <Link
+                    key={verse.verse}
+                    href={`/verse/${bookId}/${chapterNum}/${verse.verse}`}
+                    className="block group hover:bg-slate-50 dark:hover:bg-slate-700/50 -mx-4 px-4 py-4 rounded-xl transition-all duration-200"
+                  >
+                    <div className="flex gap-4">
+                      <div className="flex-shrink-0 w-12 text-right">
+                        <span className="text-sm font-bold text-slate-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors">
+                          {verse.verse}
+                        </span>
+                      </div>
+                      <p className="flex-1 text-lg leading-relaxed text-slate-700 dark:text-slate-300">
+                        {verse.text}
+                      </p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
 
-        {/* Navegação entre capítulos */}
-        <div className="mt-8 flex gap-4">
-          {chapterNum > 1 && (
+            {/* Navegação entre capítulos */}
+            <div className="mt-8 flex gap-4">
+              {chapterNum > 1 && (
+                <Link
+                  href={`/chapter/${bookId}/${chapterNum - 1}`}
+                  className="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 border-2 border-slate-200 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-400 text-center"
+                >
+                  <div className="text-sm text-slate-500 dark:text-slate-400 mb-1">
+                    Capítulo anterior
+                  </div>
+                  <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                    Capítulo {chapterNum - 1}
+                  </div>
+                </Link>
+              )}
+              
+              {chapterNum < bookData.chapters && (
+                <Link
+                  href={`/chapter/${bookId}/${chapterNum + 1}`}
+                  className="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 border-2 border-slate-200 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-400 text-center"
+                >
+                  <div className="text-sm text-slate-500 dark:text-slate-400 mb-1">
+                    Próximo capítulo
+                  </div>
+                  <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                    Capítulo {chapterNum + 1}
+                  </div>
+                </Link>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-lg border-2 border-slate-200 dark:border-slate-700 text-center">
+            <p className="text-slate-600 dark:text-slate-400">
+              Este capítulo ainda não foi importado. Use a página de importação para adicionar o conteúdo da Bíblia.
+            </p>
             <Link
-              href={`/chapter/${bookId}/${chapterNum - 1}`}
-              className="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 border-2 border-slate-200 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-400 text-center"
+              href="/import"
+              className="mt-4 inline-block px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium transition-colors"
             >
-              <div className="text-sm text-slate-500 dark:text-slate-400 mb-1">
-                Capítulo anterior
-              </div>
-              <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-                Capítulo {chapterNum - 1}
-              </div>
+              Ir para Importação
             </Link>
-          )}
-          
-          {chapterNum < bookData.chapters && (
-            <Link
-              href={`/chapter/${bookId}/${chapterNum + 1}`}
-              className="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 border-2 border-slate-200 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-400 text-center"
-            >
-              <div className="text-sm text-slate-500 dark:text-slate-400 mb-1">
-                Próximo capítulo
-              </div>
-              <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-                Capítulo {chapterNum + 1}
-              </div>
-            </Link>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

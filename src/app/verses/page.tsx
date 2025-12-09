@@ -219,12 +219,6 @@ export default function AllVersesPage() {
         <div className="max-w-6xl mx-auto p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <Link
-                href="/"
-                className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors"
-              >
-                <Home className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-              </Link>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                   <BookOpen className="w-7 h-7 text-purple-600 dark:text-purple-400" />
@@ -235,6 +229,12 @@ export default function AllVersesPage() {
                 </p>
               </div>
             </div>
+            <Link
+              href="/"
+              className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors"
+            >
+              <Home className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+            </Link>
           </div>
 
           {/* Busca e Filtros */}

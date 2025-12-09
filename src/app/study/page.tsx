@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Sprout, Trophy, Calendar, Target, ChevronRight, Flame, Search, X } from 'lucide-react';
+import { Home, Sprout, Trophy, Calendar, Target, ChevronRight, Flame, Search, X, Lock, Users } from 'lucide-react';
 import { GROWTH_LEVELS, DAILY_MISSIONS } from '@/lib/constants';
 import { GrowthLevel } from '@/lib/types';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import Link from 'next/link';
 
 export default function StudyPage() {
@@ -21,6 +21,9 @@ export default function StudyPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isInGroup, setIsInGroup] = useState(false);
+  const [groupName, setGroupName] = useState('');
+  const [userPlan, setUserPlan] = useState<'free' | 'premium' | 'pastor'>('free');
 
   useEffect(() => {
     loadUserData();
@@ -128,6 +131,72 @@ export default function StudyPage() {
           setLevel(currentLevel);
         }
 
+        // Busca plano de assinatura do usuário
+        const { data: subscription, error: subError } = await supabase
+          .from('user_subscriptions')
+          .select('subscription_plan, is_active')
+          .eq('user_id', user.id)
+          .eq('is_active', true)
+          .single();
+
+        if (!subError && subscription) {
+          const plan = subscription.subscription_plan as 'free' | 'premium' | 'pastor';
+          setUserPlan(plan);
+          localStorage.setItem('userPlan', plan);
+        } else {
+          // Se não tem assinatura, cria uma com plano free
+          const { error: createSubError } = await supabase
+            .from('user_subscriptions')
+            .insert({
+              id: crypto.randomUUID(),
+              user_id: user.id,
+              subscription_plan: 'free',
+              is_active: true,
+              started_at: new Date().toISOString(),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            });
+
+          if (!createSubError) {
+            setUserPlan('free');
+            localStorage.setItem('userPlan', 'free');
+          }
+        }
+
+        // Verifica se usuário está em algum grupo
+        const { data: groupMemberships, error: groupError } = await supabase
+          .from('group_members')
+          .select(`
+            id,
+            groups (
+              id,
+              name
+            )
+          `)
+          .eq('user_id', user.id)
+          .eq('status', 'active')
+          .limit(1);
+
+        if (!groupError && groupMemberships && groupMemberships.length > 0) {
+          setIsInGroup(true);
+          const group = groupMemberships[0].groups as any;
+          setGroupName(group?.name || 'Seu Grupo');
+          
+          // Salva no localStorage
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('userInGroup', 'true');
+            localStorage.setItem('userGroupName', group?.name || 'Seu Grupo');
+          }
+        } else {
+          setIsInGroup(false);
+          
+          // Remove do localStorage
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('userInGroup');
+            localStorage.removeItem('userGroupName');
+          }
+        }
+
         // Busca versículos lidos HOJE - ajustado para fuso horário do Brasil (UTC-3)
         console.log('🔍 Buscando versículos lidos hoje (Brasil)...');
         
@@ -206,11 +275,17 @@ export default function StudyPage() {
         const savedStreak = parseInt(localStorage.getItem('streak') || '0');
         const savedVersesRead = parseInt(localStorage.getItem('versesRead') || '0');
         const savedVersesReadToday = parseInt(localStorage.getItem('versesReadToday') || '0');
+        const savedPlan = (localStorage.getItem('userPlan') || 'free') as 'free' | 'premium' | 'pastor';
+        const savedInGroup = localStorage.getItem('userInGroup') === 'true';
+        const savedGroupName = localStorage.getItem('userGroupName') || '';
 
         setPoints(savedPoints);
         setStreak(savedStreak);
         setVersesRead(savedVersesRead);
         setVersesReadToday(savedVersesReadToday);
+        setUserPlan(savedPlan);
+        setIsInGroup(savedInGroup);
+        setGroupName(savedGroupName);
 
         const currentLevel = Object.entries(GROWTH_LEVELS).find(
           ([_, levelData]) => savedPoints >= levelData.minPoints && savedPoints <= levelData.maxPoints
@@ -277,11 +352,11 @@ export default function StudyPage() {
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center justify-between mb-6">
             <button
-              onClick={() => router.back()}
+              onClick={() => router.push('/')}
               className="flex items-center gap-2 text-white/90 hover:text-white"
             >
-              <ArrowLeft className="w-5 h-5" />
-              Voltar
+              <Home className="w-5 h-5" />
+              Início
             </button>
             <button
               onClick={() => router.push('/gamification')}
@@ -496,80 +571,152 @@ export default function StudyPage() {
           </div>
         </div>
 
-        {/* Study Plans */}
+        {/* Study Plans - Integrado com funcionalidade de grupos */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg mb-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-gray-900 dark:text-white">
               Planos de Estudo
             </h3>
-            <button className="text-sm text-green-600 dark:text-green-400 hover:underline">
+            <button 
+              onClick={() => router.push('/study-plans')}
+              className="text-sm text-green-600 dark:text-green-400 hover:underline"
+            >
               Ver todos
             </button>
           </div>
 
-          <div className="space-y-3">
-            {/* Plano Iniciante */}
-            <button className="w-full p-4 rounded-xl bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-800 hover:shadow-md transition-all text-left">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <p className="font-medium text-gray-900 dark:text-white">
-                    Primeiros Passos na Fé
-                  </p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    30 dias • Iniciante
-                  </p>
-                  <div className="mt-2 w-full bg-green-200 dark:bg-green-800 rounded-full h-1.5 overflow-hidden">
-                    <div 
-                      className="h-full bg-green-600 dark:bg-green-400 rounded-full transition-all" 
-                      style={{ width: '0%' }} 
-                    />
-                  </div>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                    Não iniciado
-                  </p>
-                </div>
-                <ChevronRight className="w-5 h-5 text-gray-400 ml-4" />
+          {!isInGroup ? (
+            // Estado Desabilitado - Não está em grupo
+            <div className="text-center py-8">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-700 mb-4">
+                <Lock className="w-8 h-8 text-gray-400 dark:text-gray-500" />
               </div>
-            </button>
+              
+              <h4 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+                Funcionalidade Exclusiva
+              </h4>
+              
+              <p className="text-gray-600 dark:text-gray-400 mb-6 text-sm max-w-md mx-auto">
+                Os Planos de Estudo são exclusivos para membros de grupos. Entre em um grupo para desbloquear!
+              </p>
 
-            {/* Plano Intermediário */}
-            <button className="w-full p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-all text-left">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <p className="font-medium text-gray-900 dark:text-white">
-                    Salmos de Conforto
-                  </p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    14 dias • Intermediário
-                  </p>
-                  <div className="mt-2 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
-                    <div className="h-full bg-blue-600 dark:bg-blue-400 rounded-full" style={{ width: '0%' }} />
-                  </div>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                    Não iniciado
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <button
+                  onClick={() => router.push('/groups')}
+                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-medium hover:shadow-lg transition-all hover:scale-105 flex items-center justify-center gap-2"
+                >
+                  <Users className="w-4 h-4" />
+                  Encontrar Grupos
+                </button>
+                {userPlan !== 'pastor' && (
+                  <button
+                    onClick={() => router.push('/plans')}
+                    className="px-6 py-3 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    Ver Planos
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            // Estado Habilitado - Está em grupo
+            <div className="space-y-3">
+              {/* Info do Grupo */}
+              <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl p-4 border border-green-200 dark:border-green-800 mb-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Users className="w-4 h-4 text-green-600 dark:text-green-400" />
+                  <p className="text-sm font-semibold text-green-900 dark:text-green-100">
+                    Grupo: {groupName}
                   </p>
                 </div>
-                <ChevronRight className="w-5 h-5 text-gray-400 ml-4" />
+                <p className="text-xs text-green-700 dark:text-green-300">
+                  Você tem acesso aos planos compartilhados
+                </p>
               </div>
-            </button>
 
-            {/* Plano Avançado (Premium) */}
-            <button className="w-full p-4 rounded-xl bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 border border-purple-200 dark:border-purple-800 hover:shadow-md transition-all text-left relative overflow-hidden">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <p className="font-medium text-gray-900 dark:text-white">
-                    Teologia Profunda
-                  </p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    60 dias • Avançado
-                  </p>
+              {/* Plano do Grupo */}
+              <button 
+                onClick={() => router.push('/study-plans')}
+                className="w-full p-4 rounded-xl bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-800 hover:shadow-md transition-all text-left"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-900 dark:text-white">
+                      Fundamentos da Fé
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                      4 semanas • Plano do Grupo
+                    </p>
+                    <div className="mt-2 w-full bg-green-200 dark:bg-green-800 rounded-full h-1.5 overflow-hidden">
+                      <div 
+                        className="h-full bg-green-600 dark:bg-green-400 rounded-full transition-all" 
+                        style={{ width: '65%' }} 
+                      />
+                    </div>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                      13/20 lições completas
+                    </p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-400 ml-4" />
                 </div>
-                <div className="px-3 py-1 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs font-medium">
-                  Premium
+              </button>
+
+              {/* Outros Planos */}
+              <button 
+                onClick={() => router.push('/study-plans')}
+                className="w-full p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-all text-left"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-900 dark:text-white">
+                      Salmos de Louvor
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                      3 semanas • Plano do Grupo
+                    </p>
+                    <div className="mt-2 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
+                      <div className="h-full bg-blue-600 dark:bg-blue-400 rounded-full" style={{ width: '30%' }} />
+                    </div>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                      5/15 lições completas
+                    </p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-400 ml-4" />
                 </div>
-              </div>
-            </button>
-          </div>
+              </button>
+            </div>
+          )}
+
+          {/* CTA para Plano Pastor */}
+          {userPlan !== 'pastor' && isInGroup && (
+            <div className="mt-4 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl p-4 text-center border border-purple-200 dark:border-purple-800">
+              <p className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
+                Quer criar seus próprios planos?
+              </p>
+              <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+                Com o plano Pastor, você pode criar e compartilhar planos personalizados
+              </p>
+              <button
+                onClick={() => router.push('/plans')}
+                className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 text-white text-sm font-medium hover:shadow-lg transition-all hover:scale-105"
+              >
+                Conhecer Plano Pastor
+              </button>
+            </div>
+          )}
+
+          {/* Acesso ao Painel de Gestão (apenas para Pastores) */}
+          {userPlan === 'pastor' && (
+            <div className="mt-4">
+              <button
+                onClick={() => router.push('/pastor/dashboard')}
+                className="w-full px-6 py-4 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold hover:shadow-xl transition-all hover:scale-[1.02] flex items-center justify-center gap-2"
+              >
+                <Trophy className="w-5 h-5" />
+                Painel de Gestão Pastor
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Calendar Streak */}
@@ -610,7 +757,7 @@ export default function StudyPage() {
             onClick={() => router.push('/')}
             className="flex flex-col items-center gap-1 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
           >
-            <ArrowLeft className="w-6 h-6" />
+            <Home className="w-6 h-6" />
             <span className="text-xs font-medium">Início</span>
           </button>
           <button className="flex flex-col items-center gap-1 text-green-600 dark:text-green-400">

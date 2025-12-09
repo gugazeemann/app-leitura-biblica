@@ -14,27 +14,33 @@ export default function GamificationPage() {
   const [streak, setStreak] = useState(0);
   const [versesRead, setVersesRead] = useState(0);
   const [interpretations, setInterpretations] = useState(0);
+  const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
-    // Carrega dados
-    const savedPoints = parseInt(localStorage.getItem('points') || '0');
-    const savedStreak = parseInt(localStorage.getItem('streak') || '0');
-    const savedVersesRead = parseInt(localStorage.getItem('versesRead') || '0');
-    const savedInterpretations = parseInt(localStorage.getItem('interpretations') || '0');
-    const savedBadges = JSON.parse(localStorage.getItem('badges') || '[]');
+    // Marca que estamos no cliente
+    setIsClient(true);
 
-    setPoints(savedPoints);
-    setStreak(savedStreak);
-    setVersesRead(savedVersesRead);
-    setInterpretations(savedInterpretations);
-    setEarnedBadges(savedBadges);
+    // Carrega dados apenas no cliente
+    if (typeof window !== 'undefined') {
+      const savedPoints = parseInt(localStorage.getItem('points') || '0');
+      const savedStreak = parseInt(localStorage.getItem('streak') || '0');
+      const savedVersesRead = parseInt(localStorage.getItem('versesRead') || '0');
+      const savedInterpretations = parseInt(localStorage.getItem('interpretations') || '0');
+      const savedBadges = JSON.parse(localStorage.getItem('badges') || '[]');
 
-    // Determina nível
-    const currentLevel = Object.entries(GROWTH_LEVELS).find(
-      ([_, levelData]) => savedPoints >= levelData.minPoints && savedPoints <= levelData.maxPoints
-    )?.[0] as GrowthLevel || 'seed';
-    
-    setLevel(currentLevel);
+      setPoints(savedPoints);
+      setStreak(savedStreak);
+      setVersesRead(savedVersesRead);
+      setInterpretations(savedInterpretations);
+      setEarnedBadges(savedBadges);
+
+      // Determina nível
+      const currentLevel = Object.entries(GROWTH_LEVELS).find(
+        ([_, levelData]) => savedPoints >= levelData.minPoints && savedPoints <= levelData.maxPoints
+      )?.[0] as GrowthLevel || 'seed';
+      
+      setLevel(currentLevel);
+    }
   }, []);
 
   const levelData = GROWTH_LEVELS[level];
@@ -55,6 +61,17 @@ export default function GamificationPage() {
         return false;
     }
   };
+
+  const isPremium = isClient && typeof window !== 'undefined' ? localStorage.getItem('isPremium') : null;
+
+  // Renderiza loading enquanto não está no cliente
+  if (!isClient) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-orange-50 dark:from-gray-900 dark:via-purple-900/10 dark:to-pink-900/10 flex items-center justify-center">
+        <div className="text-gray-600 dark:text-gray-400">Carregando...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-orange-50 dark:from-gray-900 dark:via-purple-900/10 dark:to-pink-900/10 pb-24">
@@ -166,7 +183,7 @@ export default function GamificationPage() {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             {BADGES.map((badge) => {
               const isEarned = checkBadgeEarned(badge.id);
-              const isLocked = badge.isPremium && !localStorage.getItem('isPremium');
+              const isLocked = badge.isPremium && !isPremium;
 
               return (
                 <div

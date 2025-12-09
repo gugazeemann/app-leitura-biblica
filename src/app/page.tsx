@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { BookOpen, Sprout, Lightbulb, Sparkles, Search, X } from 'lucide-react';
+import { BookOpen, Sprout, Lightbulb, Sparkles, Search, X, Users } from 'lucide-react';
 import Link from 'next/link';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
@@ -118,7 +118,7 @@ export default function Home() {
 
   const loadUserData = async () => {
     try {
-      // Verifica se Supabase está configurado
+      // Verifica se Supabase está configurado ANTES de fazer qualquer chamada
       if (!isSupabaseConfigured() || !supabase) {
         // Fallback para localStorage
         if (typeof window !== 'undefined') {
@@ -140,8 +140,21 @@ export default function Home() {
         return;
       }
 
-      // Verifica autenticação
-      const { data: { user } } = await supabase.auth.getUser();
+      // Só tenta autenticar se Supabase estiver configurado
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      // Se houver erro de autenticação, usa localStorage
+      if (authError) {
+        if (typeof window !== 'undefined') {
+          const storedName = localStorage.getItem('userName');
+          const storedVersesReadToday = parseInt(localStorage.getItem('versesReadToday') || '0');
+          if (storedName) {
+            setUserName(storedName);
+            setVersesReadToday(storedVersesReadToday);
+          }
+        }
+        return;
+      }
       
       if (user) {
         // Busca dados do perfil
@@ -358,6 +371,13 @@ export default function Home() {
             >
               <Sprout className="w-6 h-6" />
               <span className="text-xs font-medium">Estudo</span>
+            </Link>
+            <Link
+              href="/study-plans"
+              className="flex flex-col items-center gap-1 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+            >
+              <Users className="w-6 h-6" />
+              <span className="text-xs font-medium">Planos</span>
             </Link>
             <Link
               href="/profile"
@@ -652,6 +672,13 @@ export default function Home() {
           >
             <Sprout className="w-6 h-6" />
             <span className="text-xs font-medium">Estudo</span>
+          </Link>
+          <Link
+            href="/study-plans"
+            className="flex flex-col items-center gap-1 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+          >
+            <Users className="w-6 h-6" />
+            <span className="text-xs font-medium">Planos</span>
           </Link>
           <Link
             href="/profile"

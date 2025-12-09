@@ -395,3 +395,19 @@ export function getDailyVerse(): Verse {
 export function formatVerseReference(verse: Verse): string {
   return `${verse.book} ${verse.chapter}:${verse.verse}`;
 }
+
+export function getVerses(bookId: string, chapter: number): any[] {
+  // Retorna versículos do capítulo especificado
+  // Por enquanto retorna array vazio - será preenchido quando a Bíblia for importada
+  return [];
+}
+
+export function searchVerses(query: string): any[] {
+  // Busca versículos que contenham a query
+  // Por enquanto retorna versículos de exemplo que contenham a query
+  const lowerQuery = query.toLowerCase();
+  return SAMPLE_VERSES.filter(verse => 
+    verse.text.toLowerCase().includes(lowerQuery) ||
+    verse.book.toLowerCase().includes(lowerQuery)
+  );
+}
